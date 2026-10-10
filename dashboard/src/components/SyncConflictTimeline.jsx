@@ -3,6 +3,7 @@ import {
   GitMerge, ShieldAlert, Pill, Activity, AlertTriangle, 
   Sparkles, RefreshCw, CheckCircle2, FileText, ClipboardList, Clock 
 } from 'lucide-react';
+import { DEFAULT_TIMELINE_FIXTURE } from '../data/clinicalFixtures';
 
 export default function SyncConflictTimeline({ 
   timeline = [], 
@@ -10,6 +11,7 @@ export default function SyncConflictTimeline({
   selectedPatientId,
   onFetchTimelineNarrative 
 }) {
+  const activeTimeline = (timeline && timeline.length > 0) ? timeline : DEFAULT_TIMELINE_FIXTURE;
   const [narrative, setNarrative] = useState(null);
   const [loadingNarrative, setLoadingNarrative] = useState(false);
   const [syncingOffline, setSyncingOffline] = useState(false);
@@ -127,12 +129,12 @@ export default function SyncConflictTimeline({
 
       {/* Timeline Stream */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-        {timeline.length === 0 ? (
+        {activeTimeline.length === 0 ? (
           <div className="text-center py-20 text-[#94A3B8] text-xs">
             No audit events registered yet. Offline logs and medications will populate here upon sync.
           </div>
         ) : (
-          timeline.map((event, idx) => {
+          activeTimeline.map((event, idx) => {
             const config = getCategoryBadge(event.category);
             const EventIcon = config.icon;
             const timeStr = typeof event.timestamp === 'number'

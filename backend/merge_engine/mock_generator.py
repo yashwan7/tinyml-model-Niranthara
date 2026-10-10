@@ -106,6 +106,112 @@ def seed_initial_mock_data():
     )
     merge_engine.ingest_capsule(p4)
 
+    # Patient 5: Acute Hemorrhagic Shock - Pelvic Trauma
+    p5 = CaseCapsule(
+        patient_id="PT-102",
+        patient_name="Dr. Ananya Sengupta",
+        timestamp=now - 180,
+        time_to_help=0.5,
+        vitals=Vitals(
+            heart_rate=142.0,
+            spo2=84.0,
+            systolic_bp=78.0,
+            diastolic_bp=48.0,
+            respiratory_rate=36.0,
+            temperature=35.8,
+            fall_detected=True
+        ),
+        red_flags=["massive_pelvic_fracture", "hypovolemic_shock", "internal_hemorrhage"],
+        eye_gaze=EyeGaze(command="HELP", direction="UP", blink_count=2, timestamp=now - 90),
+        medications=[
+            MedicationEntry(medication="Tranexamic Acid", dose="1g IV", administered_at="14:20", administered_by="Dr. Nair", entry_id="M2"),
+            MedicationEntry(medication="O-Negative RBC", dose="2 Units", administered_at="14:24", administered_by="Medic Sierra", entry_id="M3")
+        ],
+        gps=GPSLocation(lat=12.874500, lng=77.576800, altitude=918.0),
+        triage_color="RED"
+    )
+    p5_signed = sign_capsule(p5.model_dump())
+    merge_engine.ingest_capsule(CaseCapsule(**p5_signed))
+
+    # Patient 6: Acute STEMI & Cardiogenic Pre-shock
+    p6 = CaseCapsule(
+        patient_id="PT-620",
+        patient_name="Sub-Inspector Arun Kumar",
+        timestamp=now - 240,
+        time_to_help=0.6,
+        vitals=Vitals(
+            heart_rate=128.0,
+            spo2=89.0,
+            systolic_bp=168.0,
+            diastolic_bp=104.0,
+            respiratory_rate=28.0,
+            temperature=37.2,
+            fall_detected=False
+        ),
+        red_flags=["acute_stemi_infarction", "cardiogenic_pre_shock", "chest_pressure_severe"],
+        eye_gaze=None,
+        medications=[
+            MedicationEntry(medication="Aspirin", dose="325mg PO", administered_at="14:05", administered_by="Medic Alpha", entry_id="M4"),
+            MedicationEntry(medication="Heparin", dose="5000 IU IV", administered_at="14:10", administered_by="Medic Alpha", entry_id="M5")
+        ],
+        gps=GPSLocation(lat=12.889500, lng=77.564500, altitude=912.0),
+        triage_color="RED"
+    )
+    p6_signed = sign_capsule(p6.model_dump())
+    merge_engine.ingest_capsule(CaseCapsule(**p6_signed))
+
+    # Patient 7: Chemical / Smoke Inhalation & Stridor Risk
+    p7 = CaseCapsule(
+        patient_id="PT-215",
+        patient_name="Paramedic Rajesh Rao",
+        timestamp=now - 210,
+        time_to_help=1.8,
+        vitals=Vitals(
+            heart_rate=112.0,
+            spo2=92.0,
+            systolic_bp=138.0,
+            diastolic_bp=88.0,
+            respiratory_rate=24.0,
+            temperature=37.6,
+            fall_detected=False
+        ),
+        red_flags=["acute_smoke_inhalation", "stridor_risk", "chemical_edema"],
+        eye_gaze=None,
+        medications=[
+            MedicationEntry(medication="Albuterol Nebulizer", dose="5mg", administered_at="14:00", administered_by="Medic Bravo", entry_id="M8")
+        ],
+        gps=GPSLocation(lat=12.873200, lng=77.581200, altitude=917.0),
+        triage_color="YELLOW"
+    )
+    p7_signed = sign_capsule(p7.model_dump())
+    merge_engine.ingest_capsule(CaseCapsule(**p7_signed))
+
+    # Patient 8: Stable Walking Wounded - Minor Clavicle Trauma
+    p8 = CaseCapsule(
+        patient_id="PT-508",
+        patient_name="Capt. Priya Nair",
+        timestamp=now - 320,
+        time_to_help=3.5,
+        vitals=Vitals(
+            heart_rate=72.0,
+            spo2=99.0,
+            systolic_bp=116.0,
+            diastolic_bp=74.0,
+            respiratory_rate=15.0,
+            temperature=36.8,
+            fall_detected=False
+        ),
+        red_flags=["soft_tissue_contusion", "clavicle_non_displaced"],
+        eye_gaze=None,
+        medications=[
+            MedicationEntry(medication="Ibuprofen", dose="400mg PO", administered_at="13:15", administered_by="Medic Echo", entry_id="M11")
+        ],
+        gps=GPSLocation(lat=12.872100, lng=77.575500, altitude=921.0),
+        triage_color="GREEN"
+    )
+    p8_signed = sign_capsule(p8.model_dump())
+    merge_engine.ingest_capsule(CaseCapsule(**p8_signed))
+
     # Ingest duplicate medication scenario for PT-101 to demonstrate deduplication
     dup_med_capsule = CaseCapsule(
         patient_id="PT-101",
@@ -122,3 +228,4 @@ def seed_initial_mock_data():
     )
     dup_signed = sign_capsule(dup_med_capsule.model_dump())
     merge_engine.ingest_capsule(CaseCapsule(**dup_signed))
+

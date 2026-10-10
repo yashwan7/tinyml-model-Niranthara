@@ -3,11 +3,13 @@ import {
   Heart, Wind, Clock, ShieldCheck, ShieldAlert, 
   Activity, Eye, ChevronRight
 } from 'lucide-react';
+import { DEFAULT_PATIENTS_FIXTURE } from '../data/clinicalFixtures';
 
 export default function HarmRankedQueue({ patients = [], selectedPatientId, onSelectPatient }) {
-  const redCount = patients.filter(p => p.triage_badge === 'RED').length;
-  const yellowCount = patients.filter(p => p.triage_badge === 'YELLOW').length;
-  const greenCount = patients.filter(p => p.triage_badge === 'GREEN').length;
+  const activePatients = (patients && patients.length > 0) ? patients : DEFAULT_PATIENTS_FIXTURE;
+  const redCount = activePatients.filter(p => p.triage_badge === 'RED').length;
+  const yellowCount = activePatients.filter(p => p.triage_badge === 'YELLOW').length;
+  const greenCount = activePatients.filter(p => p.triage_badge === 'GREEN').length;
 
   return (
     <div className="flex flex-col h-full nm-flat rounded-2xl border border-white/[0.04] font-mono select-none text-[#F8FAFC] overflow-hidden">
@@ -48,12 +50,12 @@ export default function HarmRankedQueue({ patients = [], selectedPatientId, onSe
 
       {/* Patient Cards List */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-        {patients.length === 0 ? (
+        {activePatients.length === 0 ? (
           <div className="text-center py-20 text-[#94A3B8] text-xs">
             Awaiting incoming hospital admissions and field telemetry...
           </div>
         ) : (
-          patients.map((item) => {
+          activePatients.map((item) => {
             const p = item.capsule;
             const isSelected = p.patient_id === selectedPatientId;
             const badge = item.triage_badge || 'YELLOW';

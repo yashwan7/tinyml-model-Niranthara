@@ -19,16 +19,17 @@ import {
   HeartPulse, ShieldAlert, RefreshCw, 
   Sparkles, Stethoscope, Activity, FileText, Zap, Eye 
 } from 'lucide-react';
+import { DEFAULT_PATIENTS_FIXTURE, DEFAULT_TIMELINE_FIXTURE } from './data/clinicalFixtures';
 
 const API_BASE = '/api';
 
 export default function App() {
   const [networkStatus, setNetworkStatus] = useState(null);
-  const [patients, setPatients] = useState([]);
+  const [patients, setPatients] = useState(DEFAULT_PATIENTS_FIXTURE);
   const [selectedPatientId, setSelectedPatientId] = useState('PT-101');
   const [selectedPatientDetail, setSelectedPatientDetail] = useState(null);
   const [activeGazeAlert, setActiveGazeAlert] = useState(null);
-  const [incidentTimeline, setIncidentTimeline] = useState([]);
+  const [incidentTimeline, setIncidentTimeline] = useState(DEFAULT_TIMELINE_FIXTURE);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'capacity' | 'bloodbank' | 'patients' | 'triage' | 'map' | 'timeline' | 'reports' | 'settings'
@@ -39,27 +40,33 @@ export default function App() {
   const fetchAllData = async () => {
     try {
       const [resNet, resPat, resTime, resCap, resBlood] = await Promise.all([
-        fetch(`${API_BASE}/network-state`).then(r => r.json()),
-        fetch(`${API_BASE}/patients`).then(r => r.json()),
-        fetch(`${API_BASE}/timeline`).then(r => r.json()),
+        fetch(`${API_BASE}/network-state`).then(r => r.json()).catch(() => null),
+        fetch(`${API_BASE}/patients`).then(r => r.json()).catch(() => null),
+        fetch(`${API_BASE}/timeline`).then(r => r.json()).catch(() => null),
         fetch(`${API_BASE}/hospital-capacity`).then(r => r.json()).catch(() => null),
         fetch(`${API_BASE}/bloodbank`).then(r => r.json()).catch(() => null)
       ]);
-      setNetworkStatus(resNet);
-      setPatients(resPat);
-      setIncidentTimeline(resTime);
-      if (resCap) {
-        setCapacityData(resCap);
-      }
-      if (resBlood) {
-        setBloodBankData(resBlood);
+      if (resNet) setNetworkStatus(resNet);
+      if (Array.isArray(resPat) && resPat.length > 0) {
+        setPatients(resPat);
+      } else {
+        setPatients(prev => prev.length > 0 ? prev : DEFAULT_PATIENTS_FIXTURE);
       }
 
-      if (resPat.length > 0 && !selectedPatientId) {
+      if (Array.isArray(resTime) && resTime.length > 0) {
+        setIncidentTimeline(resTime);
+      } else {
+        setIncidentTimeline(prev => prev.length > 0 ? prev : DEFAULT_TIMELINE_FIXTURE);
+      }
+
+      if (resCap) setCapacityData(resCap);
+      if (resBlood) setBloodBankData(resBlood);
+
+      if (resPat && resPat.length > 0 && !selectedPatientId) {
         setSelectedPatientId(resPat[0].capsule.patient_id);
       }
     } catch (err) {
-      console.error('Fetch error:', err);
+      console.warn('Fetch warning, retaining clinical fixtures:', err);
     }
   };
 

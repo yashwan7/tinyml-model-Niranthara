@@ -7,6 +7,7 @@ import {
   Building2, BedDouble, UserCheck, CheckCircle2, 
   AlertTriangle, ArrowRight, Printer, Share2, Copy, Check
 } from 'lucide-react';
+import { DEFAULT_PATIENTS_FIXTURE } from '../data/clinicalFixtures';
 
 /**
  * Enriches a patient item with complete clinical demographics,
@@ -116,8 +117,9 @@ export default function PatientsRegistry({
   const [activeReportPatient, setActiveReportPatient] = useState(null);
   const [generationProgress, setGenerationProgress] = useState(0);
 
-  // Filter enriched patients
-  const enrichedPatients = patients.map((item, idx) => getEnrichedPatientData(item, idx));
+  // Filter enriched patients (with resilient fallback)
+  const activePatients = (patients && patients.length > 0) ? patients : DEFAULT_PATIENTS_FIXTURE;
+  const enrichedPatients = activePatients.map((item, idx) => getEnrichedPatientData(item, idx));
 
   const filteredPatients = enrichedPatients.filter(item => {
     const matchesSearch = 
