@@ -240,7 +240,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#EFECE6] text-[#1A241C] flex font-mono selection:bg-[#52B788] selection:text-[#FFFFFF]">
+    <div className="min-h-screen bg-[#eef2f7] text-[#0f172a] flex font-sans selection:bg-blue-600 selection:text-white">
       
       {/* ================= LEFT TABLET SIDEBAR ================= */}
       <Sidebar activeTab={activeTab} onSelectTab={setActiveTab} />
