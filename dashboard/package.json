@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "test:cdc": "node scripts/cdcTraceVerification.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
