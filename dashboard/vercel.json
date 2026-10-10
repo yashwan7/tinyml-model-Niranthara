@@ -1,0 +1,31 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/patients",
+      "destination": "/api/patients.js"
+    },
+    {
+      "source": "/api/timeline",
+      "destination": "/api/timeline.js"
+    },
+    {
+      "source": "/api/network-state",
+      "destination": "/api/network-state.js"
+    },
+    {
+      "source": "/api/hospital-capacity",
+      "destination": "/api/hospital-capacity.js"
+    },
+    {
+      "source": "/api/bloodbank",
+      "destination": "/api/bloodbank.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
