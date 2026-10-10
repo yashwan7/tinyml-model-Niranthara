@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Users, Activity, FileText, Heart, 
   Flame, Moon, Footprints, ShieldCheck, 
   ChevronRight, Radio, Cpu, Compass, 
   Gauge, ExternalLink, RefreshCw, AlertTriangle,
-  Sparkles, CheckCircle2, ShieldAlert
+  Sparkles, CheckCircle2, ShieldAlert,
+  Siren, Share2, Navigation, MapPin, Copy, Check, X
 } from 'lucide-react';
 import { useMqttTelemetry } from '../lib/useMqttTelemetry';
 
@@ -30,6 +31,11 @@ export default function ClinicalOverview({
 
   const { pulse_val, force_n, hub_online, lat, lng } = telemetry;
 
+  // Emergency Alert & Rescue Dispatch State
+  const [isEmergencyAlertOpen, setIsEmergencyAlertOpen] = useState(true);
+  const [copyStatus, setCopyStatus] = useState(null);
+  const [isSimulatedSos, setIsSimulatedSos] = useState(false);
+
   const activePatientItem = patients.find(p => p.capsule.patient_id === selectedPatientId) || patients[0];
   const p = activePatientItem?.capsule || {
     patient_id: 'PT-101',
@@ -44,6 +50,56 @@ export default function ClinicalOverview({
   const forcePct = Math.min(100, Math.max(0, Math.round(((force_n - 1000) / 1600) * 100)));
   const forceNewtons = force_n;
   const estimatedKg = (force_n / 9.80665).toFixed(1);
+
+  // Formatted emergency dispatch message for ambulance & rescue teams
+  const emergencyMessage = useMemo(() => {
+    return [
+      `🚨 [KSHITIJ EMERGENCY RESCUE ALERT - ALS DISPATCH REQUEST]`,
+      `PATIENT: ${p.patient_name || 'Patient'} (ID: ${p.patient_id || 'PT-101'})`,
+      `TRIAGE STATUS: CODE RED / LEVEL 1 RESUSCITATION`,
+      `LIVE VITALS: Heart Rate: ${pulse_val} BPM | SpO2: ${p.vitals?.spo2 || 98}% | Bed Load: ${force_n} N`,
+      `GPS COORDINATES: ${lat}, ${lng}`,
+      `LOCATION: Brookes Haven Layout, 80 Feet Road, JP Nagar Phase 8, Bengaluru 560076`,
+      `TURN-BY-TURN NAVIGATION: https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+      `GOOGLE MAPS PIN: https://www.google.com/maps?q=${lat},${lng}`,
+      `RESCUE CHANNEL: AMBULANCE DISPATCH TAC-1 (154.280 MHz)`,
+      `TIMESTAMP: ${new Date().toLocaleTimeString()} (Active Telemetry Lock)`
+    ].join('\n');
+  }, [p.patient_name, p.patient_id, p.vitals?.spo2, pulse_val, force_n, lat, lng]);
+
+  const handleShareGps = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `EMERGENCY RESCUE: ${p.patient_name} GPS Coordinates`,
+          text: emergencyMessage,
+          url: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+        });
+        setCopyStatus('SHARED VIA NATIVE RESCUE DISPATCH');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(emergencyMessage);
+        setCopyStatus('COPIED DISPATCH & GPS TO CLIPBOARD');
+      } else {
+        setCopyStatus(`COPIED GPS: ${lat}, ${lng}`);
+      }
+    } catch (_err) {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(emergencyMessage);
+        setCopyStatus('COPIED DISPATCH & GPS TO CLIPBOARD');
+      }
+    }
+    setTimeout(() => setCopyStatus(null), 4000);
+  };
+
+  const handleCopyCoordinatesOnly = async () => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(`${lat}, ${lng}`);
+        setCopyStatus(`COPIED GPS: ${lat}, ${lng}`);
+        setTimeout(() => setCopyStatus(null), 3500);
+      }
+    } catch (_) {}
+  };
 
   const bedOccupancyState = useMemo(() => {
     if (force_n < 500) {
@@ -140,6 +196,22 @@ export default function ClinicalOverview({
         {/* Quick Testing & Live Stream Action Controls */}
         <div className="flex items-center gap-2 flex-wrap">
           <button
+            onClick={() => {
+              setIsEmergencyAlertOpen(prev => !prev);
+              setIsSimulatedSos(prev => !prev);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-1.5 transition-all uppercase ${
+              isEmergencyAlertOpen 
+                ? 'nm-alert-inset text-[#C84B31] border border-[#C84B31]/40 shadow-[0_0_8px_rgba(200,75,49,0.2)]' 
+                : 'nm-btn text-[#758475] hover:text-[#C84B31]'
+            }`}
+            title="Toggle Emergency Rescue Alert"
+          >
+            <Siren className={`w-3.5 h-3.5 text-[#C84B31] ${isEmergencyAlertOpen ? 'animate-pulse' : ''}`} />
+            <span>{isEmergencyAlertOpen ? 'EMERGENCY ALERT: ACTIVE' : 'TRIGGER EMERGENCY SOS'}</span>
+          </button>
+
+          <button
             onClick={() => injectSamplePacket()}
             className="px-3 py-1.5 nm-btn rounded-xl text-[10px] font-bold text-[#1A241C] hover:text-[#2D6A4F] flex items-center gap-1.5 transition-all uppercase"
             title="Inject a real-time sample packet to verify telemetry stream binding"
@@ -163,6 +235,124 @@ export default function ClinicalOverview({
         </div>
 
       </div>
+
+      {/* ================= EMERGENCY CASE GPS ALERT & RESCUE DISPATCH BANNER ================= */}
+      {isEmergencyAlertOpen && (
+        <div className="nm-flat rounded-2xl p-5 border-2 border-[#C84B31]/60 bg-gradient-to-r from-[#C84B31]/10 via-[#F59E0B]/5 to-transparent relative overflow-hidden shadow-[0_0_24px_rgba(200,75,49,0.2)]">
+          {/* Subtle pulsing beacon background indicator */}
+          <div className="absolute top-0 right-0 w-44 h-44 bg-[#C84B31]/10 rounded-full blur-2xl pointer-events-none" />
+
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
+            {/* Left: Emergency Status & Critical Details */}
+            <div className="space-y-2 flex-1">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="w-9 h-9 nm-alert-inset rounded-xl flex items-center justify-center text-[#C84B31] border border-[#C84B31]/40 shrink-0">
+                    <Siren className="w-5 h-5 animate-pulse" />
+                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2.5 py-0.5 nm-alert-inset rounded-lg text-[#C84B31] border border-[#C84B31]/50 text-xs font-black uppercase flex items-center gap-1.5 shadow-[0_0_8px_rgba(200,75,49,0.3)]">
+                      <span className="w-2 h-2 rounded-full bg-[#C84B31] animate-ping" />
+                      <span>EMERGENCY SOS ALERT</span>
+                    </span>
+                    <span className="text-xs font-bold text-[#1A241C] uppercase tracking-wide">
+                      IMMEDIATE RESCUE &amp; AMBULANCE DISPATCH REQUIRED
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsEmergencyAlertOpen(false)}
+                  className="p-1.5 rounded-lg nm-btn text-[#758475] hover:text-[#C84B31] text-xs"
+                  title="Dismiss alert banner"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Patient and Critical Diagnostic Banner */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                <div className="nm-inset rounded-xl p-2.5">
+                  <span className="text-[9px] font-bold text-[#758475] uppercase block">CRITICAL PATIENT</span>
+                  <span className="font-black text-[#1A241C] text-sm">{p.patient_name}</span>
+                  <span className="text-[10px] text-[#C84B31] font-mono block font-bold">ID: {p.patient_id} &bull; CODE RED</span>
+                </div>
+                <div className="nm-inset rounded-xl p-2.5">
+                  <span className="text-[9px] font-bold text-[#758475] uppercase block">LIVE TELEMETRY VITALS</span>
+                  <span className="font-black text-[#C84B31] text-sm">{pulse_val} <span className="text-xs font-normal text-[#1A241C]">BPM</span></span>
+                  <span className="text-[10px] text-[#556455] font-mono block">Force: {force_n} N &bull; SpO2: {p.vitals?.spo2 || 98}%</span>
+                </div>
+                <div className="nm-inset rounded-xl p-2.5">
+                  <span className="text-[9px] font-bold text-[#758475] uppercase block">LIVE GPS RADAR LOCK</span>
+                  <span className="font-mono font-black text-[#1A241C] text-sm tracking-tight">{lat}, {lng}</span>
+                  <span className="text-[10px] text-[#2D6A4F] font-bold block flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-[#2D6A4F]" />
+                    <span>JP Nagar Ph 8 &bull; ±2.4m</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Formatted Rescue Dispatch String Preview */}
+              <div className="nm-inset rounded-xl p-2.5 font-mono text-[11px] text-[#556455] flex items-center justify-between gap-2 overflow-hidden border border-[#C84B31]/20">
+                <div className="truncate">
+                  <strong className="text-[#C84B31]">RESCUE PAYLOAD:</strong> 🚨 Emergency ALS Request for {p.patient_name} at GPS [{lat}, {lng}] &bull; Turn-by-Turn: maps.google.com/dir/?api=1&destination={lat},{lng}
+                </div>
+                <button
+                  onClick={handleCopyCoordinatesOnly}
+                  className="px-2 py-0.5 rounded text-[10px] nm-btn text-[#1A241C] hover:text-[#2D6A4F] shrink-0 font-bold flex items-center gap-1"
+                  title="Copy lat, lng coordinates only"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>GPS</span>
+                </button>
+              </div>
+
+              {copyStatus && (
+                <div className="text-[10px] font-bold text-[#2D6A4F] flex items-center gap-1.5 animate-fadeIn">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#2D6A4F]" />
+                  <span>{copyStatus}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Right: Urgent Rescue Action Buttons */}
+            <div className="flex flex-row lg:flex-col gap-2 shrink-0 justify-end">
+              {/* Action 1: Share GPS with Ambulance / Rescue Team */}
+              <button
+                onClick={handleShareGps}
+                className="px-4 py-2.5 nm-btn text-[#FFFFFF] bg-gradient-to-r from-[#C84B31] to-[#D94E34] hover:from-[#B53B22] hover:to-[#C84B31] rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 shadow-[0_0_14px_rgba(200,75,49,0.35)] transition-all"
+                title="Broadcast and share GPS coordinates with ambulance or rescue dispatch team"
+              >
+                <Share2 className="w-4 h-4 text-white" />
+                <span>SHARE GPS WITH RESCUE TEAM</span>
+              </button>
+
+              {/* Action 2: Open Turn-by-Turn Navigation for Ambulance Crew */}
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 nm-btn text-[#1A241C] hover:text-[#2D6A4F] rounded-xl text-xs font-black uppercase flex items-center justify-center gap-2 border border-[#2D6A4F]/30 transition-all text-center"
+                title="Launch Google Maps Turn-by-Turn Navigation directly to patient coordinates"
+              >
+                <Navigation className="w-4 h-4 text-[#2D6A4F]" />
+                <span>GOOGLE MAPS NAVIGATION</span>
+              </a>
+
+              {/* Action 3: Jump to GPS Radar Ambulance Dispatch */}
+              {onNavigateTab && (
+                <button
+                  onClick={() => onNavigateTab('map')}
+                  className="px-4 py-2 nm-btn text-[#2D6A4F] hover:text-[#1A241C] rounded-xl text-[11px] font-bold uppercase flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>DISPATCH AMBULANCE (RADAR)</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= PRIMARY TELEMETRY CARDS (3 COLS) ================= */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -337,27 +527,39 @@ export default function ClinicalOverview({
             </div>
           </div>
 
-          <div className="pt-2 border-t border-[#D5CEBF]/40 flex items-center justify-between text-[10px]">
-            {onNavigateTab ? (
-              <button
-                onClick={() => onNavigateTab('map')}
-                className="text-[#2D6A4F] hover:underline font-bold uppercase flex items-center gap-1"
-              >
-                <span>OPEN GPS RADAR</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <span className="text-[#2D6A4F] font-bold">RADAR MESH SYNCED</span>
-            )}
-            <a
-              href={`https://www.google.com/maps?q=${lat},${lng}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#758475] hover:text-[#1A241C] flex items-center gap-1"
+          <div className="pt-2 border-t border-[#D5CEBF]/40 flex flex-col gap-2">
+            <button
+              onClick={handleShareGps}
+              className="w-full py-2 px-3 nm-btn text-[#C84B31] hover:text-[#FFFFFF] hover:bg-[#C84B31] rounded-xl text-[10px] font-black uppercase flex items-center justify-center gap-2 border border-[#C84B31]/40 transition-all"
+              title="Share live GPS location with ambulance or rescue dispatch team"
             >
-              <span>GOOGLE MAPS</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+              <Share2 className="w-3.5 h-3.5" />
+              <span>SHARE GPS WITH RESCUE TEAM</span>
+            </button>
+
+            <div className="flex items-center justify-between text-[10px]">
+              {onNavigateTab ? (
+                <button
+                  onClick={() => onNavigateTab('map')}
+                  className="text-[#2D6A4F] hover:underline font-bold uppercase flex items-center gap-1"
+                >
+                  <span>OPEN GPS RADAR</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <span className="text-[#2D6A4F] font-bold">RADAR MESH SYNCED</span>
+              )}
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#758475] hover:text-[#1A241C] flex items-center gap-1 font-bold"
+              >
+                <Navigation className="w-3 h-3 text-[#2D6A4F]" />
+                <span>GOOGLE MAPS NAV</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
           </div>
         </div>
 

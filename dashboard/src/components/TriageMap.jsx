@@ -13,7 +13,8 @@ import {
   Radio, Navigation, Building2, Phone, ExternalLink,
   ShieldAlert, AlertTriangle, CheckCircle2, Clock, MapPin,
   Zap, RefreshCw, X, ChevronRight, Activity, Truck,
-  Compass, Flame, Eye, Layers, AlertOctagon, RotateCcw, Pill
+  Compass, Flame, Eye, Layers, AlertOctagon, RotateCcw, Pill,
+  Share2, Siren, Copy
 } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -92,6 +93,41 @@ export default function TriageMap({ patients = [], selectedPatientId, onSelectPa
       is_demo: true
     };
     setAuditLog(prev => [entry, ...prev.slice(0, 49)]);
+  };
+
+  const handleShareIncidentGps = async () => {
+    const text = [
+      `🚨 [EMERGENCY RESCUE ALERT - AMBULANCE DISPATCH]`,
+      `Incident ID: ${activeEmergency.emergency_id}`,
+      `Patient: ${activeEmergency.patient_name} (${activeEmergency.patient_id})`,
+      `Priority: ${activeEmergency.priority}`,
+      `Live Coordinates: ${activeEmergency.lat}, ${activeEmergency.lng}`,
+      `Location: ${activeEmergency.location_label}`,
+      `Turn-by-Turn Navigation: https://www.google.com/maps/dir/?api=1&destination=${activeEmergency.lat},${activeEmergency.lng}`,
+      `Google Maps Pin: https://www.google.com/maps?q=${activeEmergency.lat},${activeEmergency.lng}`,
+      `Status: ${activeEmergency.status}${activeEmergency.assigned_ambulance_id ? ` (Committed: ${activeEmergency.assigned_ambulance_id})` : ''}`,
+      `Timestamp: ${new Date().toLocaleTimeString()}`
+    ].join('\n');
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `EMERGENCY DISPATCH: ${activeEmergency.emergency_id}`,
+          text: text,
+          url: `https://www.google.com/maps/dir/?api=1&destination=${activeEmergency.lat},${activeEmergency.lng}`
+        });
+        showNotice('Shared GPS & Incident payload to rescue team!');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+        showNotice('Copied Incident GPS & Dispatch alert to clipboard!');
+      }
+    } catch (_err) {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+        showNotice('Copied Incident GPS & Dispatch alert to clipboard!');
+      }
+    }
+    addAuditEntry('GPS_DISPATCH_SHARED', `Incident coordinates (${activeEmergency.lat}, ${activeEmergency.lng}) shared to rescue channel.`);
   };
 
   // Sync with selected patient if prop changes
@@ -1101,6 +1137,36 @@ export default function TriageMap({ patients = [], selectedPatientId, onSelectPa
                   <div className="text-[10px] text-[#94A3B8] flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-[#FF334B] shrink-0" />
                     <span className="truncate">{activeEmergency.location_label}</span>
+                  </div>
+
+                  {/* Incident GPS Coordinates & Quick Share Controls */}
+                  <div className="nm-inset rounded-xl p-2.5 space-y-2 border border-white/[0.04]">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-[#94A3B8]">INCIDENT GPS:</span>
+                      <strong className="font-mono text-[#F8FAFC]">{activeEmergency.lat}, {activeEmergency.lng}</strong>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        onClick={handleShareIncidentGps}
+                        className="py-1.5 px-2 nm-btn text-[#FF334B] hover:text-[#FFFFFF] hover:bg-[#FF334B] rounded-lg text-[9px] font-black uppercase flex items-center justify-center gap-1.5 border border-[#FF334B]/40 transition-all"
+                        title="Share live GPS coordinates with ambulance or rescue team"
+                      >
+                        <Share2 className="w-3 h-3" />
+                        <span>SHARE GPS</span>
+                      </button>
+
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${activeEmergency.lat},${activeEmergency.lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="py-1.5 px-2 nm-btn text-[#F8FAFC] hover:text-[#10B981] rounded-lg text-[9px] font-black uppercase flex items-center justify-center gap-1.5 border border-white/[0.06] transition-all text-center"
+                        title="Open turn-by-turn navigation in Google Maps"
+                      >
+                        <Navigation className="w-3 h-3 text-[#10B981]" />
+                        <span>MAPS NAV</span>
+                      </a>
+                    </div>
                   </div>
 
                   {activeEmergency.status === 'ASSIGNED' && (
