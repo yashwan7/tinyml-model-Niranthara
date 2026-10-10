@@ -1,51 +1,144 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import mqtt from 'mqtt';
 
 const DEFAULT_BROKER_URL = 'wss://broker.hivemq.com:8084/mqtt';
 const DEFAULT_TOPIC = 'izanagi/sensors/data';
 
+// Configuration bounds for Pulse Simulation
+const PULSE_CONFIG = {
+  MIN_BPM: 58,
+  MAX_BPM: 108,
+  TARGET_BASELINE: 78,
+  SWEET_SPOT_MIN: 70,
+  SWEET_SPOT_MAX: 89,
+  UPDATE_INTERVAL_MS: 1000
+};
+
+// Configuration bounds for Bed Force Simulation
+const FORCE_CONFIG = {
+  MIN_FORCE_N: 1200,
+  MAX_FORCE_N: 2400,
+  TARGET_BASELINE: 1800,
+  UPDATE_INTERVAL_MS: 1000
+};
+
+/**
+ * Weighted random walk step for human pulse rate (BPM)
+ * Favors small changes (1–3 BPM) with occasional larger deviations,
+ * centered primarily in the 70–89 BPM range.
+ */
+function calculateNextPulse(currentBpm) {
+  const { MIN_BPM, MAX_BPM, TARGET_BASELINE, SWEET_SPOT_MIN, SWEET_SPOT_MAX } = PULSE_CONFIG;
+
+  // 1. Determine step magnitude (favors 1–3 BPM)
+  const randMag = Math.random();
+  let stepMagnitude;
+  if (randMag < 0.65) {
+    // 65% probability: small natural sinus fluctuation (1–2 BPM)
+    stepMagnitude = 1 + Math.random() * 1.2;
+  } else if (randMag < 0.90) {
+    // 25% probability: moderate sinus variation (2–3 BPM)
+    stepMagnitude = 2 + Math.random() * 1.2;
+  } else {
+    // 10% probability: slightly larger excursion (3–4 BPM)
+    stepMagnitude = 3 + Math.random() * 1.5;
+  }
+
+  // 2. Determine direction (+ or -) with gentle mean-reverting pull toward 70–89 BPM
+  let pullProbabilityUp = 0.5;
+  if (currentBpm > 98) {
+    pullProbabilityUp = 0.12; // strong downward pull back towards normal
+  } else if (currentBpm > SWEET_SPOT_MAX) {
+    pullProbabilityUp = 0.28; // moderate downward pull
+  } else if (currentBpm < 62) {
+    pullProbabilityUp = 0.88; // strong upward pull back towards normal
+  } else if (currentBpm < SWEET_SPOT_MIN) {
+    pullProbabilityUp = 0.72; // moderate upward pull
+  } else {
+    // Inside sweet spot 70–89: gentle drift toward target baseline ~78 BPM
+    if (currentBpm > TARGET_BASELINE + 4) {
+      pullProbabilityUp = 0.42;
+    } else if (currentBpm < TARGET_BASELINE - 4) {
+      pullProbabilityUp = 0.58;
+    } else {
+      pullProbabilityUp = 0.50;
+    }
+  }
+
+  const direction = Math.random() < pullProbabilityUp ? 1 : -1;
+  const nextRaw = currentBpm + direction * stepMagnitude;
+
+  // 3. Clamp strictly within reasonable simulation range [58, 108]
+  const clamped = Math.min(MAX_BPM, Math.max(MIN_BPM, Math.round(nextRaw)));
+  return clamped;
+}
+
+/**
+ * Realistic fluctuation step for Bed Force load cell (N)
+ * Range: 1200 N – 2400 N around a stable patient baseline (~1800 N).
+ */
+function calculateNextBedForce(currentForce) {
+  const { MIN_FORCE_N, MAX_FORCE_N, TARGET_BASELINE } = FORCE_CONFIG;
+
+  const randMag = Math.random();
+  let forceDelta;
+
+  if (randMag < 0.75) {
+    // 75% probability: subtle respiration / micro-settling (±4 to ±16 N)
+    forceDelta = 4 + Math.random() * 12;
+  } else if (randMag < 0.95) {
+    // 20% probability: small patient movement / limb shift (±18 to ±42 N)
+    forceDelta = 18 + Math.random() * 24;
+  } else {
+    // 5% probability: posture adjustment / weight shift (±45 to ±85 N)
+    forceDelta = 45 + Math.random() * 40;
+  }
+
+  // Mean-reversion bias towards baseline ~1800 N
+  let pullUp = 0.5;
+  if (currentForce > 2150) {
+    pullUp = 0.18;
+  } else if (currentForce > 1950) {
+    pullUp = 0.35;
+  } else if (currentForce < 1450) {
+    pullUp = 0.82;
+  } else if (currentForce < 1650) {
+    pullUp = 0.65;
+  }
+
+  const direction = Math.random() < pullUp ? 1 : -1;
+  const nextRaw = currentForce + direction * forceDelta;
+
+  return Math.min(MAX_FORCE_N, Math.max(MIN_FORCE_N, Math.round(nextRaw)));
+}
+
 /**
  * useMqttTelemetry
- * Consumes real-time patient telemetry with a built-in 5-second local mock data loop.
- * 
- * Data Generation Requirements:
- * 1. Pulse Rate (pulse_val / pulse_bpm):
- *    - Fluctuates smoothly between 65 BPM and 95 BPM.
- *    - Adds slight random variation (±2 to 4 BPM) on each tick to mimic live sinus rhythm.
- *    - Update interval: Every 5 seconds (5000ms).
- * 2. Bed Force Sensor (force_n):
- *    - Fluctuates between 1200 N and 2400 N (simulating normal patient movement/shifting weight).
- *    - Randomizes naturally on every tick.
- *    - Update interval: Every 5 seconds (5000ms).
- * 3. UI Display:
- *    - Updates state variables feeding Pulse Rate Card, Bed Force Card, and connected waveform charts.
- *    - Telemetry status badge: "SIMULATED LOCAL STREAM" (or Green "CONNECTED (MOCK)").
- *    - Increments packet counter (Pkts) by 1 on every 5-second tick.
+ * Consumes real-time patient telemetry with independent 1-second dynamic
+ * simulation loops for Pulse Telemetry and Bed Force.
  */
 export function useMqttTelemetry(options = {}) {
   const brokerUrl = options.brokerUrl || DEFAULT_BROKER_URL;
   const topic = options.topic || DEFAULT_TOPIC;
   const enableMock = options.enableMock !== undefined ? options.enableMock : true;
 
-  // Initial Telemetry State within realistic clinical ranges
-  const [telemetry, setTelemetry] = useState({
-    pulse_val: 76,
-    pulse_bpm: 76,
-    force_n: 1820,
-    hub_online: true,
-    lat: '12.871773',
-    lng: '77.576856'
-  });
+  // 1. Independent State for Pulse Telemetry (initialized with plausible 76 BPM)
+  const [pulseVal, setPulseVal] = useState(76);
+  const [pulseHistory, setPulseHistory] = useState([74, 75, 76, 75, 77, 76, 78, 77, 76, 76, 75, 77]);
 
-  // Telemetry status badge state
+  // 2. Independent State for Bed Force Sensor (initialized with plausible 1820 N)
+  const [forceVal, setForceVal] = useState(1820);
+
+  // Common metadata states
+  const [hubOnline, setHubOnline] = useState(true);
+  const [location] = useState({ lat: '12.871773', lng: '77.576856' });
   const [connectionStatus, setConnectionStatus] = useState(
     enableMock ? 'SIMULATED LOCAL STREAM' : 'CONNECTING'
   );
   const [packetCount, setPacketCount] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString());
-  const [history, setHistory] = useState([74, 76, 75, 78, 77, 75, 78, 80, 77, 76]);
+  const [lastUpdated, setLastUpdated] = useState(() => new Date().toLocaleTimeString());
 
-  // Dual-Port Network Latency Jitter State (fluctuates every 500ms)
+  // Dual-Port Network Latency Jitter State (500ms loop)
   const [networkLatency, setNetworkLatency] = useState({
     portA_rtt: 24.5,
     portB_rtt: 42.1,
@@ -55,70 +148,43 @@ export function useMqttTelemetry(options = {}) {
     portBHistory: [41.5, 43.2, 45.0, 39.8, 42.1, 44.7, 46.2, 41.0, 42.8, 43.5]
   });
 
+  // Tracking references
+  const currentPulseRef = useRef(76);
+  const currentForceRef = useRef(1820);
+  const hasRealHardwareRef = useRef(false);
   const clientRef = useRef(null);
   const pendingUpdateRef = useRef(null);
 
-  // Persistent references for smooth, natural patient physiological drift
-  const currentPulseRef = useRef(76);
-  const currentForceRef = useRef(1820);
-
   /**
-   * Generates a realistic mock telemetry tick every 5 seconds (5000ms)
+   * Dedicated 1-Second Pulse Simulation Tick
    */
-  const generateMockTick = useCallback(() => {
-    // 1. Pulse Rate: fluctuate between 65 BPM and 95 BPM with ±2 to 4 BPM sinus variation
-    const sign = Math.random() < 0.5 ? -1 : 1;
-    const pulseDelta = sign * (2 + Math.random() * 2); // ±2 to 4 BPM
-    let nextPulse = Math.round(currentPulseRef.current + pulseDelta);
+  const tickPulseSimulation = useCallback(() => {
+    if (hasRealHardwareRef.current) return;
 
-    // Natural bounce back if approaching bounds [65, 95] BPM
-    if (nextPulse < 65) {
-      nextPulse = 65 + Math.floor(Math.random() * 3);
-    } else if (nextPulse > 95) {
-      nextPulse = 95 - Math.floor(Math.random() * 3);
-    }
+    const nextPulse = calculateNextPulse(currentPulseRef.current);
     currentPulseRef.current = nextPulse;
 
-    // 2. Bed Force Sensor: fluctuate between 1200 N and 2400 N (simulating patient shifting weight)
-    const forceSign = Math.random() < 0.5 ? -1 : 1;
-    // Blend subtle micro-motion (30-70N) with occasional posture shift (80-160N)
-    const isShift = Math.random() < 0.35;
-    const forceDelta = forceSign * (isShift ? (80 + Math.random() * 80) : (25 + Math.random() * 45));
-    let nextForce = Math.round(currentForceRef.current + forceDelta);
-
-    // Keep naturally bounded within [1200, 2400] N
-    if (nextForce < 1200) {
-      nextForce = 1200 + Math.floor(Math.random() * 80);
-    } else if (nextForce > 2400) {
-      nextForce = 2400 - Math.floor(Math.random() * 80);
-    }
-    currentForceRef.current = nextForce;
-
-    const newTelemetry = {
-      pulse_val: nextPulse,
-      pulse_bpm: nextPulse,
-      force_n: nextForce,
-      hub_online: true,
-      lat: '12.871773',
-      lng: '77.576856'
-    };
-
-    // Update state variables smoothly
-    setTelemetry(newTelemetry);
+    setPulseVal(nextPulse);
+    setPulseHistory(prev => [...prev.slice(-24), nextPulse]);
     setPacketCount(prev => prev + 1);
     setLastUpdated(new Date().toLocaleTimeString());
-    setHistory(prev => [...prev.slice(-19), nextPulse]);
-
-    // Optional: publish simulated packet to broker if connected
-    if (clientRef.current && clientRef.current.connected) {
-      try {
-        clientRef.current.publish(topic, JSON.stringify(newTelemetry), { qos: 0 });
-      } catch (_) {}
-    }
-  }, [topic]);
+  }, []);
 
   /**
-   * Process external incoming packet (from real MQTT hardware or manual injection)
+   * Dedicated 1-Second Bed Force Simulation Tick (Independent of Pulse)
+   */
+  const tickForceSimulation = useCallback(() => {
+    if (hasRealHardwareRef.current) return;
+
+    const nextForce = calculateNextBedForce(currentForceRef.current);
+    currentForceRef.current = nextForce;
+
+    setForceVal(nextForce);
+    setLastUpdated(new Date().toLocaleTimeString());
+  }, []);
+
+  /**
+   * Process incoming real hardware packets from MQTT broker
    */
   const processPacket = useCallback((payload) => {
     try {
@@ -127,63 +193,70 @@ export function useMqttTelemetry(options = {}) {
       const rawPulse = data.pulse_val ?? data.pulse_bpm ?? data.pulse ?? data.hr;
       const rawForce = data.force_n ?? data.force ?? data.bed_force ?? data.weight;
       const rawHub = data.hub_online ?? data.hubOnline ?? data.online;
-      const rawLat = data.lat ?? data.latitude ?? '12.871773';
-      const rawLng = data.lng ?? data.longitude ?? '77.576856';
 
-      const validPulse = typeof rawPulse === 'number' ? rawPulse : Number(rawPulse) || 76;
-      const validForce = typeof rawForce === 'number' ? rawForce : Number(rawForce) || 1820;
+      hasRealHardwareRef.current = true;
 
-      currentPulseRef.current = validPulse;
-      currentForceRef.current = validForce;
-
-      const newTelemetry = {
-        pulse_val: validPulse,
-        pulse_bpm: validPulse,
-        force_n: validForce,
-        hub_online: rawHub !== undefined ? (typeof rawHub === 'boolean' ? rawHub : String(rawHub).toLowerCase() === 'true') : true,
-        lat: String(rawLat),
-        lng: String(rawLng)
-      };
-
-      if (pendingUpdateRef.current) {
-        cancelAnimationFrame(pendingUpdateRef.current);
+      if (rawPulse !== undefined && !isNaN(Number(rawPulse))) {
+        const pNum = Number(rawPulse);
+        currentPulseRef.current = pNum;
+        setPulseVal(pNum);
+        setPulseHistory(prev => [...prev.slice(-24), pNum]);
       }
 
-      pendingUpdateRef.current = requestAnimationFrame(() => {
-        setTelemetry(newTelemetry);
-        setPacketCount(prev => prev + 1);
-        setLastUpdated(new Date().toLocaleTimeString());
-        setHistory(prev => [...prev.slice(-19), newTelemetry.pulse_val]);
-      });
+      if (rawForce !== undefined && !isNaN(Number(rawForce))) {
+        const fNum = Number(rawForce);
+        currentForceRef.current = fNum;
+        setForceVal(fNum);
+      }
+
+      if (rawHub !== undefined) {
+        setHubOnline(typeof rawHub === 'boolean' ? rawHub : String(rawHub).toLowerCase() === 'true');
+      }
+
+      setPacketCount(prev => prev + 1);
+      setLastUpdated(new Date().toLocaleTimeString());
+      setConnectionStatus('CONNECTED (HARDWARE)');
     } catch (err) {
-      console.warn('[MQTT] Failed to parse payload:', err);
+      console.warn('[MQTT] Packet parse error:', err);
     }
   }, []);
 
   /**
-   * 5-Second Local Mock Simulation Loop (Runs continuously every 5000ms)
+   * 1-SECOND PULSE TELEMETRY LOOP
+   * Updates once every second (1000ms) with weighted random walk.
    */
   useEffect(() => {
     if (!enableMock) return;
 
-    // Run baseline initial packet immediately
-    generateMockTick();
+    // Run initial tick
+    tickPulseSimulation();
 
-    // 5-second interval loop (5000ms)
-    const intervalTimer = setInterval(() => {
-      generateMockTick();
-    }, 5000);
+    const pulseInterval = setInterval(() => {
+      tickPulseSimulation();
+    }, PULSE_CONFIG.UPDATE_INTERVAL_MS);
 
-    return () => clearInterval(intervalTimer);
-  }, [enableMock, generateMockTick]);
+    return () => clearInterval(pulseInterval);
+  }, [enableMock, tickPulseSimulation]);
 
   /**
-   * Continuous 500ms Network Latency Jitter Loop (Port A & Port B)
-   * Requirements:
-   * - Port A: 20.0 ms to 35.0 ms, rounded to 1 decimal place.
-   * - Port B: 35.0 ms to 50.0 ms, rounded to 1 decimal place.
-   * - Jitter: kept between 1.0 ms and 3.5 ms.
-   * - Update timing: every 500ms.
+   * 1-SECOND BED FORCE LOOP
+   * Updates once every second (1000ms) independently of pulse.
+   */
+  useEffect(() => {
+    if (!enableMock) return;
+
+    // Run initial tick
+    tickForceSimulation();
+
+    const forceInterval = setInterval(() => {
+      tickForceSimulation();
+    }, FORCE_CONFIG.UPDATE_INTERVAL_MS);
+
+    return () => clearInterval(forceInterval);
+  }, [enableMock, tickForceSimulation]);
+
+  /**
+   * 500ms Network Jitter Simulation Loop
    */
   useEffect(() => {
     if (!enableMock) return;
@@ -208,17 +281,17 @@ export function useMqttTelemetry(options = {}) {
   }, [enableMock]);
 
   /**
-   * HiveMQ MQTT WebSocket Client (runs in background for live network sync)
+   * MQTT Client connection for optional live telemetry streaming
    */
   useEffect(() => {
     let isSubscribed = true;
 
     try {
-      const clientId = 'MacBook_Dashboard_' + Math.random().toString(16).substring(2, 8);
+      const clientId = 'MacBook_EMR_' + Math.random().toString(16).substring(2, 8);
       const client = mqtt.connect(brokerUrl, {
         clientId,
         keepalive: 60,
-        reconnectPeriod: 2000,
+        reconnectPeriod: 3000,
         clean: true,
       });
 
@@ -226,7 +299,7 @@ export function useMqttTelemetry(options = {}) {
 
       client.on('connect', () => {
         if (!isSubscribed) return;
-        setConnectionStatus(enableMock ? 'CONNECTED (MOCK)' : 'CONNECTED');
+        setConnectionStatus(enableMock ? 'SIMULATED LOCAL STREAM' : 'CONNECTED');
         client.subscribe(topic);
       });
 
@@ -245,8 +318,7 @@ export function useMqttTelemetry(options = {}) {
       client.on('message', (incomingTopic, messageBuffer) => {
         if (!isSubscribed) return;
         if (incomingTopic === topic) {
-          const text = messageBuffer.toString();
-          processPacket(text);
+          processPacket(messageBuffer.toString());
         }
       });
     } catch (err) {
@@ -267,19 +339,42 @@ export function useMqttTelemetry(options = {}) {
     };
   }, [brokerUrl, topic, enableMock, processPacket]);
 
-  /**
-   * Manual sample injection helper
-   */
+  // Combined Telemetry Object preserving all existing bindings
+  const telemetry = useMemo(() => ({
+    pulse_val: pulseVal,
+    pulse_bpm: pulseVal,
+    force_n: forceVal,
+    hub_online: hubOnline,
+    lat: location.lat,
+    lng: location.lng
+  }), [pulseVal, forceVal, hubOnline, location.lat, location.lng]);
+
   const injectSamplePacket = useCallback((override = {}) => {
-    generateMockTick();
-  }, [generateMockTick]);
+    if (override.pulse_val !== undefined) {
+      setPulseVal(override.pulse_val);
+      currentPulseRef.current = override.pulse_val;
+    } else {
+      tickPulseSimulation();
+    }
+    if (override.force_n !== undefined) {
+      setForceVal(override.force_n);
+      currentForceRef.current = override.force_n;
+    } else {
+      tickForceSimulation();
+    }
+    if (override.hub_online !== undefined) {
+      setHubOnline(override.hub_online);
+    }
+  }, [tickPulseSimulation, tickForceSimulation]);
 
   return {
     telemetry,
+    pulseVal,
+    forceVal,
     connectionStatus,
     packetCount,
     lastUpdated,
-    pulseHistory: history,
+    pulseHistory,
     portA_rtt: networkLatency.portA_rtt,
     portB_rtt: networkLatency.portB_rtt,
     portA_jitter: networkLatency.portA_jitter,
@@ -288,6 +383,6 @@ export function useMqttTelemetry(options = {}) {
     brokerUrl,
     topic,
     injectSamplePacket,
-    generateMockTick
+    generateMockTick: tickPulseSimulation
   };
 }

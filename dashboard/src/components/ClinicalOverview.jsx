@@ -179,7 +179,7 @@ export default function ClinicalOverview({
                 </strong>
               </span>
               <span>&bull;</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#E8E4DA] text-[#556455] font-mono">5000ms loop</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#E8E4DA] text-[#556455] font-mono">1000ms loop</span>
               <span>&bull;</span>
               <span className="flex items-center gap-1">
                 <span>Pkts:</span>
@@ -396,7 +396,7 @@ export default function ClinicalOverview({
               
               <div className="text-right">
                 <span className="text-[9px] font-bold text-[#2D6A4F] block">SINUS RHYTHM</span>
-                <span className="text-[10px] text-[#758475] font-mono">±2 to 4 bpm / 5s</span>
+                <span className="text-[10px] text-[#758475] font-mono">&plusmn;1 to 3 bpm / 1s</span>
               </div>
             </div>
 
