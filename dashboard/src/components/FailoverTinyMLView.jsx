@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Cpu, Zap, Radio, Activity, ShieldCheck, 
   ArrowRightLeft, AlertTriangle, CheckCircle2, 
@@ -12,6 +12,14 @@ export default function FailoverTinyMLView() {
   const [tinymlStatus, setTinymlStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   
+  // Live continuous mock network latency state for Port A (Primary) & Port B (Backup Path)
+  const [portA_rtt, setPortARtt] = useState(24.5);
+  const [portB_rtt, setPortBRtt] = useState(42.1);
+  const [portA_jitter, setPortAJitter] = useState(1.8);
+  const [portB_jitter, setPortBJitter] = useState(2.4);
+  const [portAHistory, setPortAHistory] = useState([24.5, 23.8, 25.1, 24.2, 26.0, 25.4, 24.8, 25.2, 24.5]);
+  const [portBHistory, setPortBHistory] = useState([42.1, 41.5, 43.0, 42.8, 44.2, 43.1, 42.4, 43.6, 42.1]);
+
   // Interactive Playground Inputs
   const [playgroundParams, setPlaygroundParams] = useState({
     latency_ms: 24.5,
@@ -42,6 +50,56 @@ export default function FailoverTinyMLView() {
     const interval = setInterval(fetchStatus, 1500);
     return () => clearInterval(interval);
   }, []);
+
+  /**
+   * Continuous 500ms Network Latency Jitter Loop (Port A & Port B)
+   * Requirements:
+   * - Port A: 20.0 ms to 35.0 ms, rounded to 1 decimal place.
+   * - Port B: 35.0 ms to 50.0 ms, rounded to 1 decimal place.
+   * - Jitter: kept between 1.0 ms and 3.5 ms.
+   * - Update timing: every 500ms continuous.
+   */
+  useEffect(() => {
+    const jitterTimer = setInterval(() => {
+      const nextA = parseFloat((20.0 + Math.random() * 15.0).toFixed(1));
+      const nextB = parseFloat((35.0 + Math.random() * 15.0).toFixed(1));
+      const jitterA = parseFloat((1.0 + Math.random() * 2.5).toFixed(1));
+      const jitterB = parseFloat((1.0 + Math.random() * 2.5).toFixed(1));
+
+      setPortARtt(nextA);
+      setPortBRtt(nextB);
+      setPortAJitter(jitterA);
+      setPortBJitter(jitterB);
+      setPortAHistory(prev => [...prev.slice(-24), nextA]);
+      setPortBHistory(prev => [...prev.slice(-24), nextB]);
+    }, 500);
+
+    return () => clearInterval(jitterTimer);
+  }, []);
+
+  // Generate SVG path for Port A latency waveform (20.0 - 35.0 ms mapped to SVG height)
+  const wavePathPortA = useMemo(() => {
+    if (!portAHistory || portAHistory.length < 2) return 'M 0 30 L 300 30';
+    const points = portAHistory.map((val, idx) => {
+      const x = (idx / (portAHistory.length - 1)) * 300;
+      const clamped = Math.min(35.0, Math.max(20.0, val));
+      const y = 48 - ((clamped - 20.0) / 15.0) * 38;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    return `M ${points[0]} ` + points.slice(1).map(pt => `L ${pt}`).join(' ');
+  }, [portAHistory]);
+
+  // Generate SVG path for Port B latency waveform (35.0 - 50.0 ms mapped to SVG height)
+  const wavePathPortB = useMemo(() => {
+    if (!portBHistory || portBHistory.length < 2) return 'M 0 30 L 300 30';
+    const points = portBHistory.map((val, idx) => {
+      const x = (idx / (portBHistory.length - 1)) * 300;
+      const clamped = Math.min(50.0, Math.max(35.0, val));
+      const y = 48 - ((clamped - 35.0) / 15.0) * 38;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    return `M ${points[0]} ` + points.slice(1).map(pt => `L ${pt}`).join(' ');
+  }, [portBHistory]);
 
   const handleApplyPreset = async (preset) => {
     try {
@@ -83,8 +141,19 @@ export default function FailoverTinyMLView() {
   };
 
   const sample = failoverStatus?.latest_sample || {};
-  const portA = sample.port_a || { latency_ms: 22.0, jitter_ms: 1.8, packet_loss_pct: 0.05, rssi_dbm: -58, bandwidth_kbps: 4500 };
-  const portB = sample.port_b || { latency_ms: 45.0, jitter_ms: 4.2, packet_loss_pct: 0.1, rssi_dbm: -72, bandwidth_kbps: 1200 };
+  const rawPortA = sample.port_a || { packet_loss_pct: 0.05, rssi_dbm: -58, bandwidth_kbps: 4500 };
+  const rawPortB = sample.port_b || { packet_loss_pct: 0.1, rssi_dbm: -72, bandwidth_kbps: 1200 };
+
+  const portA = {
+    ...rawPortA,
+    latency_ms: portA_rtt,
+    jitter_ms: portA_jitter
+  };
+  const portB = {
+    ...rawPortB,
+    latency_ms: portB_rtt,
+    jitter_ms: portB_jitter
+  };
   const evaluation = failoverStatus?.evaluation || {};
   const currentState = failoverStatus?.current_state || 'STATE_NORMAL';
   const activePath = failoverStatus?.active_path || 'PORT_A';
@@ -208,14 +277,21 @@ export default function FailoverTinyMLView() {
         <div className="nm-flat rounded-2xl p-4 border border-white/[0.04]">
           <div className="flex items-center justify-between text-[11px] text-[#94A3B8] uppercase font-semibold mb-1.5">
             <span>PORT A (PRIMARY)</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse shadow-[0_0_8px_#10B981]"></span>
           </div>
           <div className="text-2xl font-bold text-[#F8FAFC] tracking-tight flex items-baseline gap-1">
-            <span>{portA.latency_ms?.toFixed(1) || 22.0}</span>
+            <span>{portA.latency_ms?.toFixed(1) || '22.0'}</span>
             <span className="text-xs font-normal text-[#94A3B8]">ms RTT</span>
           </div>
-          <div className="text-[11px] text-[#94A3B8] mt-2 font-sans">
-            Loss: <strong className="text-[#F8FAFC]">{portA.packet_loss_pct?.toFixed(2)}%</strong> &bull; Jitter: <strong className="text-[#F8FAFC]">{portA.jitter_ms?.toFixed(1)}ms</strong>
+          {/* Mini Waveform Sparkline */}
+          <div className="h-6 w-full nm-inset rounded-lg p-0.5 overflow-hidden my-1.5">
+            <svg className="w-full h-full transition-all duration-300" viewBox="0 0 300 60" preserveAspectRatio="none">
+              <path d={wavePathPortA} fill="none" stroke="#10B981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="text-[11px] text-[#94A3B8] mt-1 font-sans flex items-center justify-between">
+            <span>Loss: <strong className="text-[#F8FAFC]">{portA.packet_loss_pct?.toFixed(2)}%</strong></span>
+            <span>Jitter: <strong className="text-[#10B981] font-mono">{portA.jitter_ms?.toFixed(1)}ms</strong></span>
           </div>
         </div>
 
@@ -223,14 +299,21 @@ export default function FailoverTinyMLView() {
         <div className="nm-flat rounded-2xl p-4 border border-white/[0.04]">
           <div className="flex items-center justify-between text-[11px] text-[#94A3B8] uppercase font-semibold mb-1.5">
             <span>PORT B (BACKUP)</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B]"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B] animate-pulse shadow-[0_0_8px_#F59E0B]"></span>
           </div>
           <div className="text-2xl font-bold text-[#F8FAFC] tracking-tight flex items-baseline gap-1">
-            <span>{portB.latency_ms?.toFixed(1) || 45.0}</span>
+            <span>{portB.latency_ms?.toFixed(1) || '45.0'}</span>
             <span className="text-xs font-normal text-[#94A3B8]">ms RTT</span>
           </div>
-          <div className="text-[11px] text-[#94A3B8] mt-2 font-sans">
-            Loss: <strong className="text-[#F8FAFC]">{portB.packet_loss_pct?.toFixed(2)}%</strong> &bull; Jitter: <strong className="text-[#F8FAFC]">{portB.jitter_ms?.toFixed(1)}ms</strong>
+          {/* Mini Waveform Sparkline */}
+          <div className="h-6 w-full nm-inset rounded-lg p-0.5 overflow-hidden my-1.5">
+            <svg className="w-full h-full transition-all duration-300" viewBox="0 0 300 60" preserveAspectRatio="none">
+              <path d={wavePathPortB} fill="none" stroke="#F59E0B" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="text-[11px] text-[#94A3B8] mt-1 font-sans flex items-center justify-between">
+            <span>Loss: <strong className="text-[#F8FAFC]">{portB.packet_loss_pct?.toFixed(2)}%</strong></span>
+            <span>Jitter: <strong className="text-[#F59E0B] font-mono">{portB.jitter_ms?.toFixed(1)}ms</strong></span>
           </div>
         </div>
 
@@ -275,8 +358,8 @@ export default function FailoverTinyMLView() {
 
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-[#94A3B8]">Latency:</span>
-                    <span className="font-mono font-bold text-[#F8FAFC]">{portA.latency_ms?.toFixed(1)} ms</span>
+                    <span className="text-[#94A3B8]">Latency (RTT):</span>
+                    <span className="font-mono font-bold text-[#10B981]">{portA.latency_ms?.toFixed(1)} ms</span>
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span className="text-[#94A3B8]">Jitter:</span>
@@ -291,6 +374,26 @@ export default function FailoverTinyMLView() {
                   <div className="flex justify-between text-[11px]">
                     <span className="text-[#94A3B8]">Bandwidth:</span>
                     <span className="font-mono font-bold text-[#F8FAFC]">{portA.bandwidth_kbps || 4500} kbps</span>
+                  </div>
+                </div>
+
+                {/* Live Jitter Waveform Mini Chart */}
+                <div className="mt-3 pt-2.5 border-t border-white/[0.04]">
+                  <div className="flex justify-between items-center text-[10px] text-[#94A3B8] mb-1.5">
+                    <span className="font-semibold">PORT A JITTER WAVEFORM (500ms)</span>
+                    <span className="text-[#10B981] font-mono font-bold">{portA.latency_ms?.toFixed(1)} ms</span>
+                  </div>
+                  <div className="relative h-11 w-full nm-inset rounded-lg p-1 overflow-hidden">
+                    <svg className="w-full h-full transition-all duration-300" viewBox="0 0 300 60" preserveAspectRatio="none">
+                      <path
+                        d={wavePathPortA}
+                        fill="none"
+                        stroke="#10B981"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </div>
                 </div>
               </div>
@@ -315,8 +418,8 @@ export default function FailoverTinyMLView() {
 
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-[#94A3B8]">Latency:</span>
-                    <span className="font-mono font-bold text-[#F8FAFC]">{portB.latency_ms?.toFixed(1)} ms</span>
+                    <span className="text-[#94A3B8]">Latency (RTT):</span>
+                    <span className="font-mono font-bold text-[#F59E0B]">{portB.latency_ms?.toFixed(1)} ms</span>
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span className="text-[#94A3B8]">Jitter:</span>
@@ -331,6 +434,26 @@ export default function FailoverTinyMLView() {
                   <div className="flex justify-between text-[11px]">
                     <span className="text-[#94A3B8]">Bandwidth:</span>
                     <span className="font-mono font-bold text-[#F8FAFC]">{portB.bandwidth_kbps || 1200} kbps</span>
+                  </div>
+                </div>
+
+                {/* Live Jitter Waveform Mini Chart */}
+                <div className="mt-3 pt-2.5 border-t border-white/[0.04]">
+                  <div className="flex justify-between items-center text-[10px] text-[#94A3B8] mb-1.5">
+                    <span className="font-semibold">PORT B JITTER WAVEFORM (500ms)</span>
+                    <span className="text-[#F59E0B] font-mono font-bold">{portB.latency_ms?.toFixed(1)} ms</span>
+                  </div>
+                  <div className="relative h-11 w-full nm-inset rounded-lg p-1 overflow-hidden">
+                    <svg className="w-full h-full transition-all duration-300" viewBox="0 0 300 60" preserveAspectRatio="none">
+                      <path
+                        d={wavePathPortB}
+                        fill="none"
+                        stroke="#F59E0B"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </div>
                 </div>
               </div>
@@ -399,8 +522,8 @@ export default function FailoverTinyMLView() {
                 <span>PATH: <strong className="text-[#F8FAFC]">{activePath}</strong></span>
               </div>
               <div className="flex justify-between">
-                <span>LAT: <strong className="text-[#F8FAFC]">{portA.latency_ms?.toFixed(1)} ms</strong></span>
-                <span>LOSS: <strong className="text-[#F8FAFC]">{portA.packet_loss_pct?.toFixed(1)}%</strong></span>
+                <span>LAT A: <strong className="text-[#10B981]">{portA.latency_ms?.toFixed(1)} ms</strong></span>
+                <span>LAT B: <strong className="text-[#F59E0B]">{portB.latency_ms?.toFixed(1)} ms</strong></span>
               </div>
               <div className="flex justify-between">
                 <span>TinyML: <strong className="text-[#10B981]">HEALTHY (99.9%)</strong></span>

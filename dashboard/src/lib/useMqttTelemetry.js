@@ -45,6 +45,16 @@ export function useMqttTelemetry(options = {}) {
   const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString());
   const [history, setHistory] = useState([74, 76, 75, 78, 77, 75, 78, 80, 77, 76]);
 
+  // Dual-Port Network Latency Jitter State (fluctuates every 500ms)
+  const [networkLatency, setNetworkLatency] = useState({
+    portA_rtt: 24.5,
+    portB_rtt: 42.1,
+    portA_jitter: 1.8,
+    portB_jitter: 2.4,
+    portAHistory: [22.4, 24.8, 26.1, 24.0, 22.8, 25.4, 27.2, 23.9, 24.5, 25.1],
+    portBHistory: [41.5, 43.2, 45.0, 39.8, 42.1, 44.7, 46.2, 41.0, 42.8, 43.5]
+  });
+
   const clientRef = useRef(null);
   const pendingUpdateRef = useRef(null);
 
@@ -168,6 +178,36 @@ export function useMqttTelemetry(options = {}) {
   }, [enableMock, generateMockTick]);
 
   /**
+   * Continuous 500ms Network Latency Jitter Loop (Port A & Port B)
+   * Requirements:
+   * - Port A: 20.0 ms to 35.0 ms, rounded to 1 decimal place.
+   * - Port B: 35.0 ms to 50.0 ms, rounded to 1 decimal place.
+   * - Jitter: kept between 1.0 ms and 3.5 ms.
+   * - Update timing: every 500ms.
+   */
+  useEffect(() => {
+    if (!enableMock) return;
+
+    const jitterTimer = setInterval(() => {
+      const nextA = parseFloat((20.0 + Math.random() * 15.0).toFixed(1));
+      const nextB = parseFloat((35.0 + Math.random() * 15.0).toFixed(1));
+      const jitterA = parseFloat((1.0 + Math.random() * 2.5).toFixed(1));
+      const jitterB = parseFloat((1.0 + Math.random() * 2.5).toFixed(1));
+
+      setNetworkLatency(prev => ({
+        portA_rtt: nextA,
+        portB_rtt: nextB,
+        portA_jitter: jitterA,
+        portB_jitter: jitterB,
+        portAHistory: [...prev.portAHistory.slice(-19), nextA],
+        portBHistory: [...prev.portBHistory.slice(-19), nextB]
+      }));
+    }, 500);
+
+    return () => clearInterval(jitterTimer);
+  }, [enableMock]);
+
+  /**
    * HiveMQ MQTT WebSocket Client (runs in background for live network sync)
    */
   useEffect(() => {
@@ -240,6 +280,11 @@ export function useMqttTelemetry(options = {}) {
     packetCount,
     lastUpdated,
     pulseHistory: history,
+    portA_rtt: networkLatency.portA_rtt,
+    portB_rtt: networkLatency.portB_rtt,
+    portA_jitter: networkLatency.portA_jitter,
+    portB_jitter: networkLatency.portB_jitter,
+    networkLatency,
     brokerUrl,
     topic,
     injectSamplePacket,
