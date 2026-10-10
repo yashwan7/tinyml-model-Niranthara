@@ -37,3 +37,7 @@ build/
 bin/
 out/
 .next/
+
+# SQLite Databases & CDC Logs
+backend/data/*.db*
+backend/data/*.jsonl

@@ -25,6 +25,14 @@ from .security import sign_capsule, verify_capsule
 from .blood_bank_engine import get_blood_bank_state, process_blood_bank_action
 from .mqtt_engine import mqtt_engine
 
+from backend.cdc import (
+    cdc_service,
+    cdc_destinations,
+    CdcControlRequest,
+    CdcSimulateCrudRequest,
+    CdcPipelineStatus
+)
+
 
 # Clubbed Subsystem Engines
 from core.failover.engine import FailoverEngine
@@ -264,6 +272,12 @@ async def startup_event():
     except Exception as e:
         print(f"Warning starting mqtt_engine: {e}")
 
+    try:
+        cdc_service.register_ws_callback(broadcast_ws)
+        await cdc_service.start()
+    except Exception as e:
+        print(f"Warning starting cdc_service: {e}")
+
     asyncio.create_task(telemetry_ticker())
 
 @app.on_event("shutdown")
@@ -274,6 +288,10 @@ async def shutdown_event():
         pass
     try:
         mqtt_engine.stop()
+    except Exception:
+        pass
+    try:
+        await cdc_service.stop()
     except Exception:
         pass
 
@@ -289,6 +307,9 @@ async def telemetry_ticker():
 
             # Broadcast latest MQTT sensor telemetry tick
             await broadcast_ws("MQTT_SENSOR_TICK", mqtt_engine.current_telemetry)
+
+            # Broadcast live CDC pipeline status
+            await broadcast_ws("CDC_STATUS_TICK", cdc_service.get_status().model_dump())
         except Exception:
             pass
         await asyncio.sleep(1.0)
@@ -823,6 +844,81 @@ async def publish_sensors_endpoint(req: SensorPublishRequest):
         "telemetry": mqtt_engine.current_telemetry
     }
 
+# --- Change Data Capture (CDC) REST Endpoints ---
+
+@app.get("/api/cdc/status", response_model=CdcPipelineStatus)
+def get_cdc_status_endpoint():
+    """Returns comprehensive real-time CDC pipeline health, LSN metrics, and component statuses."""
+    return cdc_service.get_status()
+
+@app.get("/api/cdc/events")
+def get_cdc_events_endpoint(limit: int = 50, table: Optional[str] = None, op: Optional[str] = None):
+    """Queries recent transactional CDC events with before/after diffs and redaction."""
+    return [e.model_dump() for e in cdc_destinations.get_recent_events(limit=limit, table=table, op=op)]
+
+@app.get("/api/cdc/dlq")
+def get_cdc_dlq_endpoint(limit: int = 50):
+    """Returns Dead Letter Queue quarantined poison events."""
+    return cdc_service.get_dlq_records(limit=limit)
+
+@app.get("/api/cdc/analytics")
+def get_cdc_analytics_endpoint():
+    """Returns downstream materialized analytics state synchronized by CDC."""
+    return cdc_destinations.get_materialized_view_summary()
+
+@app.post("/api/cdc/control")
+async def cdc_control_endpoint(req: CdcControlRequest):
+    """Operational controls: pause, resume, trigger_snapshot, retry_dlq, clear_dlq."""
+    action = req.action.lower()
+    if action == "pause":
+        cdc_service.pause()
+        msg = "CDC consumption paused"
+    elif action == "resume":
+        cdc_service.resume()
+        msg = "CDC consumption resumed"
+    elif action == "trigger_snapshot":
+        count = cdc_service.trigger_snapshot()
+        msg = f"Triggered point-in-time snapshot ({count} records captured)"
+    elif action == "retry_dlq":
+        count = cdc_service.retry_dlq()
+        msg = f"Retried DLQ: {count} events successfully recovered"
+    elif action == "clear_dlq":
+        count = cdc_service.clear_dlq()
+        msg = f"Cleared DLQ: {count} events removed"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported CDC control action: {action}")
+    
+    status = cdc_service.get_status().model_dump()
+    await broadcast_ws("CDC_STATUS_TICK", status)
+    return {"status": "ok", "message": msg, "pipeline": status}
+
+@app.post("/api/cdc/simulate-crud")
+async def cdc_simulate_crud_endpoint(req: CdcSimulateCrudRequest):
+    """
+    Executes actual SQL mutations against the source database to fire transactional
+    triggers and demonstrate live INSERT, UPDATE, DELETE, and DLQ handling.
+    """
+    op = req.op.lower()
+    table = req.table.lower()
+
+    if op == "insert":
+        result = cdc_service.simulate_insert(table=table, data=req.data)
+    elif op == "update":
+        result = cdc_service.simulate_update(table=table, record_id=req.record_id, data=req.data)
+    elif op == "delete":
+        result = cdc_service.simulate_delete(table=table, record_id=req.record_id)
+    elif op == "poison":
+        result = cdc_service.simulate_poison_pill()
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported CRUD operation: {op}")
+
+    # Allow background CDC worker to process the batch immediately
+    await cdc_service.process_batch(limit=10)
+    
+    status = cdc_service.get_status().model_dump()
+    await broadcast_ws("CDC_STATUS_TICK", status)
+    return {"operation_result": result, "pipeline_status": status}
+
 # --- WebSocket Channel ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -837,7 +933,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 "capacity": hospital_capacity_state.model_dump(),
                 "bloodbank": get_blood_bank_state().model_dump(),
                 "dispatch": dispatch_coordinator.get_state(),
-                "sensors": mqtt_engine.current_telemetry
+                "sensors": mqtt_engine.current_telemetry,
+                "cdc": cdc_service.get_status().model_dump()
             }
         }))
         while True:

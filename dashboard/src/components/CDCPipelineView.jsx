@@ -40,6 +40,7 @@ import {
   downloadText,
   inspectTraceFile,
 } from '../lib/cdcParquet.js';
+import CdcLivePipelineMonitor from './CdcLivePipelineMonitor';
 
 const speedOptions = [1, 5, 10, 25, 100];
 const depthOptions = [8, 16];
@@ -89,6 +90,7 @@ const CLINICAL_PRESETS = [
 ];
 
 export default function CDCPipelineView() {
+  const [viewMode, setViewMode] = useState('live-db');
   const [config, setConfig] = useState(() => ({
     ...DEFAULT_CDC_CONFIG,
     runId: createRunId('cdc-synthetic'),
@@ -313,9 +315,52 @@ export default function CDCPipelineView() {
 
   return (
     <div className="space-y-6">
-      
-      {/* ================= TOP TACTICAL MISSION HEADER ================= */}
-      <section className="nm-flat rounded-2xl p-6 border border-white/80 bg-[#F7F4ED] shadow-[4px_4px_16px_rgba(200,190,175,0.4)]">
+      {/* ================= PRIMARY MODE SWITCHER ================= */}
+      <div className="nm-flat p-2 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode('live-db')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              viewMode === 'live-db'
+                ? 'nm-inset text-[#2D6A4F]'
+                : 'nm-btn text-[#536253]'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-[#52B788] animate-pulse" />
+            <Database className="w-4 h-4" />
+            <span>Live Database CDC Pipeline (SQLite WAL & Transaction Log Replicator)</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#2D6A4F]/10 text-[#2D6A4F] font-mono">
+              ACTIVE SINK
+            </span>
+          </button>
+
+          <button
+            onClick={() => setViewMode('fifo-sim')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              viewMode === 'fifo-sim'
+                ? 'nm-inset text-[#2D6A4F]'
+                : 'nm-btn text-[#536253]'
+            }`}
+          >
+            <Cpu className="w-4 h-4" />
+            <span>Dual-Clock Async FIFO & Parquet Trace Engine</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#E5DFD4] text-[#536253] font-mono">
+              HARDWARE SIM
+            </span>
+          </button>
+        </div>
+
+        <div className="text-xs text-[#758375] px-3 font-mono hidden md:block">
+          {viewMode === 'live-db' ? 'Active: Transaction Log CDC Engine' : 'Active: Dual-Clock Async FIFO Model'}
+        </div>
+      </div>
+
+      {viewMode === 'live-db' ? (
+        <CdcLivePipelineMonitor />
+      ) : (
+        <>
+          {/* ================= TOP TACTICAL MISSION HEADER ================= */}
+          <section className="nm-flat rounded-2xl p-6 border border-white/80 bg-[#F7F4ED] shadow-[4px_4px_16px_rgba(200,190,175,0.4)]">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
           <div>
             <div className="flex items-center gap-3 flex-wrap">
@@ -861,6 +906,8 @@ export default function CDCPipelineView() {
           </div>
         </div>
       </section>
+        </>
+      )}
 
     </div>
   );
