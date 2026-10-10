@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   LayoutGrid, Users, Activity, MapPin, 
   Zap, Eye, GitMerge, FileText, Settings, 
-  ChevronRight, Building2, Droplet, Pill, Database
+  ChevronRight, Building2, Droplet, Pill
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, onSelectTab }) {
@@ -24,7 +24,6 @@ export default function Sidebar({ activeTab, onSelectTab }) {
       items: [
         { id: 'failover', label: 'Failover & TinyML', icon: Zap, badge: '500ms' },
         { id: 'eog', label: 'EOG & Bio-Security', icon: Eye, badge: '100Hz' },
-        { id: 'cdc', label: 'CDC Parquet Telemetry', icon: Database, badge: 'PARQUET' },
       ]
     },
     {

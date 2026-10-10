@@ -597,7 +597,7 @@ export default function ClinicalOverview({
               <div className="nm-inset rounded-xl p-3.5">
                 <div className="text-[10px] uppercase font-bold text-[#758475]">Pending Sync &amp; Merges</div>
                 <div className="text-2xl font-black text-[#2D6A4F] mt-1">18 QUEUED</div>
-                <div className="text-[10px] text-[#2D6A4F] font-bold mt-1">100% Nirantara CDC</div>
+                <div className="text-[10px] text-[#2D6A4F] font-bold mt-1">100% Verified Telemetry</div>
               </div>
             </div>
 
@@ -778,7 +778,7 @@ export default function ClinicalOverview({
               <div className="flex items-center justify-between text-xs mb-1">
                 <div className="flex items-center gap-2">
                   <Moon className="w-3.5 h-3.5 text-[#2D6A4F]" />
-                  <span className="text-xs font-bold text-[#556455]">HMAC Device Security &amp; Nirantara CDC</span>
+                  <span className="text-xs font-bold text-[#556455]">HMAC Device Security &amp; Hardware Sync</span>
                 </div>
                 <span className="font-bold text-[#2D6A4F] text-xs">AUTHENTICATED</span>
               </div>

@@ -15,7 +15,6 @@ import BloodBankNetwork from './components/BloodBankNetwork';
 import FailoverTinyMLView from './components/FailoverTinyMLView';
 import EOGSecurityView from './components/EOGSecurityView';
 import PharmacyNetwork from './components/PharmacyNetwork';
-import CDCPipelineView from './components/CDCPipelineView';
 import { 
   HeartPulse, ShieldAlert, RefreshCw, 
   Sparkles, Stethoscope, Activity, FileText, Zap, Eye 
@@ -380,10 +379,6 @@ export default function App() {
 
         {activeTab === 'eog' && (
           <EOGSecurityView />
-        )}
-
-        {activeTab === 'cdc' && (
-          <CDCPipelineView />
         )}
 
         {activeTab === 'timeline' && (
