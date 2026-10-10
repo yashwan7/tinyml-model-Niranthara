@@ -40,16 +40,19 @@ export default function ClinicalOverview({
   const isTachycardic = pulse_val > 100;
   const isBradycardic = pulse_val < 60;
   
-  // Force N calculations (0 - 4095 gauge)
-  const forcePct = Math.min(100, Math.max(0, Math.round((force_n / 4095) * 100)));
-  const forceNewtons = Math.round((force_n / 4095) * 980);
-  const estimatedKg = ((force_n / 4095) * 100).toFixed(1);
+  // Force N calculations: realistic bed load (1200 N - 2400 N)
+  const forcePct = Math.min(100, Math.max(0, Math.round(((force_n - 1000) / 1600) * 100)));
+  const forceNewtons = force_n;
+  const estimatedKg = (force_n / 9.80665).toFixed(1);
 
   const bedOccupancyState = useMemo(() => {
-    if (force_n < 250) {
+    if (force_n < 500) {
       return { label: 'BED UNOCCUPIED / CALIBRATED', color: 'text-[#94A3B8]', badge: 'nm-badge' };
     }
-    if (force_n > 3200) {
+    if (force_n >= 1200 && force_n <= 2400) {
+      return { label: 'OCCUPIED — NORMAL REST / SHIFTING WEIGHT', color: 'text-[#2D6A4F]', badge: 'nm-inset text-[#2D6A4F] border border-[#2D6A4F]/30' };
+    }
+    if (force_n > 2400) {
       return { label: 'HIGH LOAD / PATIENT RESTLESS', color: 'text-[#C84B31]', badge: 'nm-alert-inset text-[#C84B31] border border-[#C84B31]/40' };
     }
     return { label: 'OCCUPIED — STABLE REST', color: 'text-[#2D6A4F]', badge: 'nm-inset text-[#2D6A4F] border border-[#2D6A4F]/30' };
@@ -104,18 +107,23 @@ export default function ClinicalOverview({
 
             <div className="flex items-center gap-2 text-[10px] text-[#758475] mt-1 font-medium flex-wrap">
               <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all ${
-                connectionStatus === 'CONNECTED'
+                connectionStatus === 'CONNECTED' || connectionStatus.includes('MOCK') || connectionStatus.includes('SIMULATED')
                   ? 'nm-inset text-[#2D6A4F] border border-[#2D6A4F]/40 bg-[#E8EFE9] shadow-[0_0_8px_rgba(45,106,79,0.15)]'
                   : 'nm-alert-inset text-[#C84B31] border border-[#C84B31]/40'
               }`}>
-                <Radio className={`w-3 h-3 ${connectionStatus === 'CONNECTED' ? 'text-[#2D6A4F]' : 'text-[#C84B31]'}`} />
-                <span>HiveMQ WSS:</span>
-                <strong className={connectionStatus === 'CONNECTED' ? 'text-[#2D6A4F]' : 'text-[#C84B31]'}>
+                <span className={`w-2 h-2 rounded-full ${
+                  connectionStatus === 'CONNECTED' || connectionStatus.includes('MOCK') || connectionStatus.includes('SIMULATED')
+                    ? 'bg-[#2D6A4F] animate-pulse'
+                    : 'bg-[#C84B31]'
+                }`} />
+                <Radio className={`w-3 h-3 ${connectionStatus === 'CONNECTED' || connectionStatus.includes('MOCK') || connectionStatus.includes('SIMULATED') ? 'text-[#2D6A4F]' : 'text-[#C84B31]'}`} />
+                <span>STREAM:</span>
+                <strong className={connectionStatus === 'CONNECTED' || connectionStatus.includes('MOCK') || connectionStatus.includes('SIMULATED') ? 'text-[#2D6A4F]' : 'text-[#C84B31]'}>
                   {connectionStatus}
                 </strong>
               </span>
               <span>&bull;</span>
-              <span>Topic: <code className="text-[#1A241C] bg-[#E8E4DA] px-1.5 py-0.5 rounded font-mono text-[9px]">{topic}</code></span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#E8E4DA] text-[#556455] font-mono">5000ms loop</span>
               <span>&bull;</span>
               <span className="flex items-center gap-1">
                 <span>Pkts:</span>
@@ -187,7 +195,7 @@ export default function ClinicalOverview({
             {/* Hero Live Pulse Readout */}
             <div className="nm-inset rounded-xl p-3 my-2 flex items-baseline justify-between">
               <div>
-                <span className="text-[9px] uppercase font-bold text-[#758475] block">pulse_val readout</span>
+                <span className="text-[9px] uppercase font-bold text-[#758475] block">pulse_val / pulse_bpm readout</span>
                 <div className="flex items-baseline gap-2">
                   <span className={`text-4xl font-black tracking-tight ${isTachycardic ? 'text-[#C84B31]' : 'text-[#1A241C]'}`}>
                     {pulse_val}
@@ -197,14 +205,14 @@ export default function ClinicalOverview({
               </div>
               
               <div className="text-right">
-                <span className="text-[9px] font-bold text-[#556455] block">STREAM ACTIVE</span>
-                <span className="text-[10px] text-[#758475] font-mono">±1.2 bpm precision</span>
+                <span className="text-[9px] font-bold text-[#2D6A4F] block">SINUS RHYTHM</span>
+                <span className="text-[10px] text-[#758475] font-mono">±2 to 4 bpm / 5s</span>
               </div>
             </div>
 
             {/* Reactive Waveform Mini Chart */}
             <div className="relative h-16 w-full nm-inset rounded-xl p-1.5 overflow-hidden my-2">
-              <svg className="w-full h-full" viewBox="0 0 500 120" preserveAspectRatio="none">
+              <svg className="w-full h-full transition-all duration-700" viewBox="0 0 500 120" preserveAspectRatio="none">
                 <path
                   d={waveSvgPath}
                   fill="none"
@@ -245,31 +253,31 @@ export default function ClinicalOverview({
             {/* Hero Force Readout */}
             <div className="nm-inset rounded-xl p-3 my-2 flex items-baseline justify-between">
               <div>
-                <span className="text-[9px] uppercase font-bold text-[#758475] block">force_n (0 - 4095)</span>
+                <span className="text-[9px] uppercase font-bold text-[#758475] block">force_n (1200 - 2400 N)</span>
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl font-black text-[#1A241C] tracking-tight">
                     {force_n}
                   </span>
-                  <span className="text-xs font-bold text-[#758475]">/ 4095</span>
+                  <span className="text-xs font-bold text-[#758475]">N</span>
                 </div>
               </div>
 
               <div className="text-right">
                 <span className="text-[10px] font-black text-[#2D6A4F] block">~{forceNewtons} N</span>
-                <span className="text-[10px] text-[#758475] font-mono">est. {estimatedKg} kg</span>
+                <span className="text-[10px] text-[#758475] font-mono">est. {estimatedKg} kg load</span>
               </div>
             </div>
 
             {/* Neumorphic Force Gauge Bar */}
             <div className="space-y-1 my-2">
               <div className="flex justify-between text-[9px] font-bold text-[#758475]">
-                <span>0 (EMPTY)</span>
-                <span>2048 (MID)</span>
-                <span>4095 (MAX)</span>
+                <span>1200 N (MIN LOAD)</span>
+                <span>1800 N (MED)</span>
+                <span>2400 N (MAX LOAD)</span>
               </div>
               <div className="w-full h-3.5 nm-inset rounded-full p-0.5 overflow-hidden">
                 <div 
-                  className="h-full bg-gradient-to-r from-[#2D6A4F] via-[#52B788] to-[#C84B31] rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(45,106,79,0.3)]"
+                  className="h-full bg-gradient-to-r from-[#2D6A4F] via-[#52B788] to-[#C84B31] rounded-full transition-all duration-500 shadow-[0_0_8px_rgba(45,106,79,0.3)]"
                   style={{ width: `${forcePct}%` }}
                 />
               </div>
